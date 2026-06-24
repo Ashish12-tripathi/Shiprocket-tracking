@@ -1,19 +1,17 @@
 {
-  "name": "shiprocket-edd",
+  "name": "omichef-shiprocket-edd-abandoned-cart-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Omichef backend for Shiprocket EDD and Razorpay abandoned cart Interakt automation.",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "axios": "^1.17.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "axios": "^1.7.9",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5"
   }
 }
