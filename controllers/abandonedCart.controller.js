@@ -6,6 +6,7 @@ const {
   getRazorpayName,
   getRazorpayEmail,
   getFirstProductName,
+  getFirstProductImageUrl,
   getCartValue,
   getShopifyOrderPhone,
   getShopifyOrderEmail,
@@ -43,6 +44,9 @@ async function receiveRazorpayAbandonedCart(req, res) {
 
     const cartToken = payload.cart_token || payload.token || null;
 
+    const productName = getFirstProductName(payload);
+    const productImageUrl = getFirstProductImageUrl(payload);
+
     const updateData = {
       source: "razorpay_magic_checkout",
       razorpayToken: payload.token || null,
@@ -59,7 +63,8 @@ async function receiveRazorpayAbandonedCart(req, res) {
       countryCode: phoneData.countryCode,
       phoneNumber: phoneData.phoneNumber,
 
-      productName: getFirstProductName(payload),
+      productName,
+      productImageUrl,
       cartValue: getCartValue(payload),
       currency: payload.currency || "INR",
 
@@ -82,6 +87,7 @@ async function receiveRazorpayAbandonedCart(req, res) {
 
     if (existing) {
       // Do not reset message sent flags if Razorpay sends the same abandoned cart again.
+      // Only refresh the cart/customer/product details.
       Object.assign(existing, updateData);
       cart = await existing.save();
     } else {
@@ -94,6 +100,8 @@ async function receiveRazorpayAbandonedCart(req, res) {
       cartId: cart._id,
       phone: cart.phoneE164,
       checkoutUrl: cart.checkoutUrl,
+      productName: cart.productName,
+      productImageUrl: cart.productImageUrl || null,
     });
   } catch (error) {
     console.error("Razorpay abandoned cart webhook error:", error);

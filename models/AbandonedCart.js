@@ -19,7 +19,8 @@ const abandonedCartSchema = new mongoose.Schema(
     phoneNumber: { type: String, required: true },
 
     productName: String,
-    cartValue: Number,
+    productImageUrl: String,
+     cartValue: Number,
     currency: String,
 
     utmSource: String,

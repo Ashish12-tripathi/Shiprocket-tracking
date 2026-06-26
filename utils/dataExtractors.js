@@ -31,9 +31,54 @@ function getRazorpayEmail(payload) {
   return email ? String(email).toLowerCase() : null;
 }
 
+/*
+  Picks the best cart item for abandoned cart messaging.
+
+  Priority:
+  1. First line item that has an image URL
+  2. First line item in the cart
+  3. null fallback
+
+  This is important because Razorpay can send multiple line_items,
+  and sometimes line_items[0] may not contain the product image,
+  while line_items[1] or another item does.
+*/
+function getFirstProductWithImage(payload) {
+  const items = Array.isArray(payload.line_items) ? payload.line_items : [];
+
+  return (
+    items.find(
+      (item) =>
+        item?.image_url ||
+        item?.image ||
+        item?.product_image ||
+        item?.product_image_url ||
+        item?.featured_image ||
+        item?.thumbnail
+    ) ||
+    items[0] ||
+    null
+  );
+}
+
 function getFirstProductName(payload) {
-  const item = Array.isArray(payload.line_items) ? payload.line_items[0] : null;
+  const item = getFirstProductWithImage(payload);
+
   return item?.name || item?.title || "your Omichef cookware";
+}
+
+function getFirstProductImageUrl(payload) {
+  const item = getFirstProductWithImage(payload);
+
+  return (
+    item?.image_url ||
+    item?.image ||
+    item?.product_image ||
+    item?.product_image_url ||
+    item?.featured_image ||
+    item?.thumbnail ||
+    null
+  );
 }
 
 function getCartValue(payload) {
@@ -67,7 +112,9 @@ module.exports = {
   getRazorpayPhone,
   getRazorpayName,
   getRazorpayEmail,
+  getFirstProductWithImage,
   getFirstProductName,
+  getFirstProductImageUrl,
   getCartValue,
   getShopifyOrderPhone,
   getShopifyOrderEmail,
