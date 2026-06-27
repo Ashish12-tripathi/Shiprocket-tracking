@@ -7,9 +7,9 @@ async function processDueAbandonedCarts() {
     INTERAKT_TEMPLATE_1,
     INTERAKT_TEMPLATE_2,
     INTERAKT_TEMPLATE_3,
-    MESSAGE_1_DELAY_MINUTES = "1",
-    MESSAGE_2_DELAY_MINUTES = "2",
-    MESSAGE_3_DELAY_MINUTES = "3",
+    MESSAGE_1_DELAY_MINUTES = "30",
+    MESSAGE_2_DELAY_MINUTES = "1440",
+    MESSAGE_3_DELAY_MINUTES = "4320",
   } = process.env;
 
   const carts = await AbandonedCart.find({
