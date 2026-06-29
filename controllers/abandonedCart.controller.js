@@ -144,25 +144,28 @@ async function receiveShopifyOrderCreate(req, res) {
       });
     }
 
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const result = await AbandonedCart.updateMany(
-      {
-        converted: false,
-        createdAt: { $gte: sevenDaysAgo },
-        $or: orConditions,
-      },
-      {
-        $set: {
-          converted: true,
-          convertedAt: new Date(),
-          status: "converted",
-          shopifyOrderId: String(order.id || ""),
-          shopifyOrderName: String(order.name || order.order_number || ""),
-        },
-      }
-    );
+// Delete this record automatically 10 days after conversion
+const deleteAfterAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
 
+const result = await AbandonedCart.updateMany(
+  {
+    converted: false,
+    createdAt: { $gte: sevenDaysAgo },
+    $or: orConditions,
+  },
+  {
+    $set: {
+      converted: true,
+      convertedAt: new Date(),
+      status: "converted",
+      shopifyOrderId: String(order.id || ""),
+      shopifyOrderName: String(order.name || order.order_number || ""),
+      deleteAfterAt: deleteAfterAt,
+    },
+  }
+);
     return res.status(200).json({
       ok: true,
       convertedUpdated: result.modifiedCount || 0,

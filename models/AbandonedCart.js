@@ -49,6 +49,7 @@ const abandonedCartSchema = new mongoose.Schema(
 
     lastError: String,
     rawPayload: Object,
+    deleteAfterAt: Date,
   },
   { timestamps: true }
 );
@@ -56,5 +57,10 @@ const abandonedCartSchema = new mongoose.Schema(
 abandonedCartSchema.index({ phoneE164: 1, cartToken: 1 });
 abandonedCartSchema.index({ checkoutUrl: 1 });
 abandonedCartSchema.index({ converted: 1, status: 1, createdAt: 1 });
+
+abandonedCartSchema.index(
+  { deleteAfterAt: 1 },
+  { expireAfterSeconds: 0 }
+);
 
 module.exports = mongoose.model("AbandonedCart", abandonedCartSchema);
