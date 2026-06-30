@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const cron = require("node-cron");
 const connectDB = require("./config/db");
-const { processAbandonedCarts } = require("./services/cron.service");
+const { processDueAbandonedCarts } = require("./services/cron.service");
 
 let isRunning = false;
 
@@ -17,7 +17,7 @@ async function runCronJob() {
   try {
     console.log("Abandoned cart cron started:", new Date().toISOString());
 
-    const result = await processAbandonedCarts();
+    const result = await processDueAbandonedCarts();
 
     console.log("Abandoned cart cron completed:", {
       processed: result.processed,
