@@ -67,7 +67,7 @@ async function processDueAbandonedCarts() {
         cart.status = "stopped";
 
         // Auto-delete this record 10 days after the full abandoned cart flow is completed
-        cart.deleteAfterAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+        cart.deleteAfterAt = new Date(Date.now() + 150 * 24 * 60 * 60 * 1000);
       }
 
       cart.lastError = null;
