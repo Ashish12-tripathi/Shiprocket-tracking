@@ -168,6 +168,68 @@ async function sendInteraktTemplate(cart, templateName) {
   };
 }
 
+async function sendInteraktCampaignTemplate(contact, templateName, bodyValues = []) {
+  if (!process.env.INTERAKT_API_KEY) {
+    throw new Error("INTERAKT_API_KEY missing.");
+  }
+
+  if (!process.env.INTERAKT_API_URL) {
+    throw new Error("INTERAKT_API_URL missing.");
+  }
+
+  if (!templateName) {
+    throw new Error("Campaign template name missing.");
+  }
+
+  const phoneNumber =
+    contact.phoneNumber ||
+    String(contact.phoneE164 || "")
+      .replace(/^\+91/, "")
+      .replace(/\D/g, "");
+
+  if (!phoneNumber) {
+    throw new Error("Phone number missing for campaign message.");
+  }
+
+  const payload = {
+    countryCode: contact.countryCode || "+91",
+    phoneNumber,
+    callbackData: `campaign_${contact.campaignKey || "manual"}`,
+    type: "Template",
+    template: {
+      name: templateName,
+      languageCode: process.env.INTERAKT_LANGUAGE || "en",
+    },
+  };
+
+  if (Array.isArray(bodyValues) && bodyValues.length > 0) {
+    payload.template.bodyValues = bodyValues;
+  }
+
+  console.log("INTERAKT CAMPAIGN PAYLOAD:", JSON.stringify(payload, null, 2));
+
+  if (process.env.DRY_RUN === "true") {
+    return {
+      dryRun: true,
+      message: "Dry run only. Campaign WhatsApp was not sent.",
+      payload,
+    };
+  }
+
+  const response = await axios.post(process.env.INTERAKT_API_URL, payload, {
+    headers: {
+      Authorization: `Basic ${process.env.INTERAKT_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    timeout: 20000,
+  });
+
+  return {
+    ok: true,
+    data: response.data,
+  };
+}
+
 module.exports = {
   sendInteraktTemplate,
 };

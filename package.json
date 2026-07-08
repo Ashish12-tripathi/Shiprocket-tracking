@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "start:cron": "node cron-worker.js"
+    "start:cron": "node cron-worker.js",
+    "import:game-audience": "node scripts/import-game-audience-from-db.js"
   },
   "dependencies": {
     "axios": "^1.7.9",

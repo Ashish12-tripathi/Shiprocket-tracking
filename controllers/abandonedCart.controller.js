@@ -2,6 +2,10 @@ const AbandonedCart = require("../models/AbandonedCart");
 const { requireSecret } = require("../utils/security");
 const { normalizeIndianPhone } = require("../utils/phone");
 const {
+  saveConvertedCustomerFromShopifyOrder,
+} = require("../services/conversion.service");
+
+const {
   getRazorpayPhone,
   getRazorpayName,
   getRazorpayEmail,
@@ -144,31 +148,46 @@ async function receiveShopifyOrderCreate(req, res) {
       });
     }
 
-   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-// Delete this record automatically 10 days after conversion
-   const deleteAfterAt = new Date(Date.now() + 150 * 24 * 60 * 60 * 1000);
+    // Delete this record automatically 150 days after conversion
+    const deleteAfterAt = new Date(Date.now() + 150 * 24 * 60 * 60 * 1000);
 
-const result = await AbandonedCart.updateMany(
-  {
-    converted: false,
-    createdAt: { $gte: sevenDaysAgo },
-    $or: orConditions,
-  },
-  {
-    $set: {
-      converted: true,
-      convertedAt: new Date(),
-      status: "converted",
-      shopifyOrderId: String(order.id || ""),
-      shopifyOrderName: String(order.name || order.order_number || ""),
-      deleteAfterAt: deleteAfterAt,
-    },
-  }
-);
+    const result = await AbandonedCart.updateMany(
+      {
+        converted: false,
+        createdAt: { $gte: sevenDaysAgo },
+        $or: orConditions,
+      },
+      {
+        $set: {
+          converted: true,
+          convertedAt: new Date(),
+          status: "converted",
+          shopifyOrderId: String(order.id || ""),
+          shopifyOrderName: String(order.name || order.order_number || ""),
+          deleteAfterAt: deleteAfterAt,
+        },
+      }
+    );
+
+    // Find matched carts after existing abandoned cart conversion logic
+    const matchedCarts = await AbandonedCart.find({
+      createdAt: { $gte: sevenDaysAgo },
+      $or: orConditions,
+    })
+      .sort({ createdAt: -1 })
+      .limit(20);
+
+    const convertedCustomerResult = await saveConvertedCustomerFromShopifyOrder({
+      order,
+      matchedCarts,
+    });
+
     return res.status(200).json({
       ok: true,
-      convertedUpdated: result.modifiedCount || 0,
+      convertedUpdated: result.modifiedCount || result.nModified || 0,
+      convertedCustomer: convertedCustomerResult,
     });
   } catch (error) {
     console.error("Shopify order webhook error:", error);
