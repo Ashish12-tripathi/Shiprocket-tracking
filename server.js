@@ -1,6 +1,9 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const dns = require("dns");
+// Force Node DNS resolver for MongoDB SRV lookup
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 const connectDB = require("./config/db");
 const shiprocketRoutes = require("./routes/shiprocket.routes");
@@ -58,6 +61,9 @@ app.use((req, res) => {
 
 async function startServer() {
   await connectDB();
+
+  // Start background cron worker after DB connection is ready
+  require("./cron-worker");
 
   const port = process.env.PORT || 3000;
 

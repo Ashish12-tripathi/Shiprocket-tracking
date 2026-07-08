@@ -3,6 +3,8 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const GameWinnerContact = require("../models/GameWinnerContact");
 const GameVoterContact = require("../models/GameVoterContact");
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 function normalizeIndianPhone(rawPhone) {
   if (!rawPhone) return null;
@@ -248,7 +250,7 @@ async function importVoterContacts({ voterDocs, winnerByPublicChallengeId }) {
   return { extracted, valid, invalid };
 }
 
-async function main() {
+async function importGameAudience() {
   const {
     MONGODB_URI,
     GAME_SOURCE_MONGODB_URI,
@@ -272,54 +274,79 @@ async function main() {
     throw new Error("GAME_VOTERS_SOURCE_COLLECTION missing.");
   }
 
-  await mongoose.connect(MONGODB_URI);
+  if (mongoose.connection.readyState === 0) {
+    await mongoose.connect(MONGODB_URI);
+  }
 
   const sourceConnection = await mongoose
     .createConnection(GAME_SOURCE_MONGODB_URI)
     .asPromise();
 
-  const winnersCollection = sourceConnection.collection(GAME_WINNERS_SOURCE_COLLECTION);
-  const votersCollection = sourceConnection.collection(GAME_VOTERS_SOURCE_COLLECTION);
+  try {
+    const winnersCollection = sourceConnection.collection(GAME_WINNERS_SOURCE_COLLECTION);
+    const votersCollection = sourceConnection.collection(GAME_VOTERS_SOURCE_COLLECTION);
 
-  const winnerDocs = await winnersCollection.find({}).toArray();
-  const voterDocs = await votersCollection.find({}).toArray();
+    const winnerDocs = await winnersCollection.find({}).toArray();
+    const voterDocs = await votersCollection.find({}).toArray();
 
-  const winnerByPublicChallengeId = new Map();
+    const winnerByPublicChallengeId = new Map();
 
-  for (const winner of winnerDocs) {
-    if (winner.publicChallengeId) {
-      winnerByPublicChallengeId.set(String(winner.publicChallengeId), winner);
+    for (const winner of winnerDocs) {
+      if (winner.publicChallengeId) {
+        winnerByPublicChallengeId.set(String(winner.publicChallengeId), winner);
+      }
     }
+
+    const winnerImport = await importWinnerContacts({ winnerDocs });
+
+    const voterImport = await importVoterContacts({
+      voterDocs,
+      winnerByPublicChallengeId,
+    });
+
+    const result = {
+      winnersSourceCollection: GAME_WINNERS_SOURCE_COLLECTION,
+      votersSourceCollection: GAME_VOTERS_SOURCE_COLLECTION,
+      winnerDocuments: winnerDocs.length,
+      voterDocuments: voterDocs.length,
+      winnerContacts: winnerImport,
+      voterContacts: voterImport,
+      targetWinnerCollection: "gamewinnercontacts",
+      targetVoterCollection: "gamevotercontacts",
+    };
+
+    console.log("Game audience import completed:", result);
+
+    return result;
+  } finally {
+    await sourceConnection.close();
   }
-
-  const winnerImport = await importWinnerContacts({ winnerDocs });
-
-  const voterImport = await importVoterContacts({
-    voterDocs,
-    winnerByPublicChallengeId,
-  });
-
-  console.log("Game audience import completed:", {
-    winnersSourceCollection: GAME_WINNERS_SOURCE_COLLECTION,
-    votersSourceCollection: GAME_VOTERS_SOURCE_COLLECTION,
-    winnerDocuments: winnerDocs.length,
-    voterDocuments: voterDocs.length,
-    winnerContacts: winnerImport,
-    voterContacts: voterImport,
-    targetWinnerCollection: "gamewinnercontacts",
-    targetVoterCollection: "gamevotercontacts",
-  });
-
-  await sourceConnection.close();
-  await mongoose.connection.close();
 }
 
-main().catch(async (error) => {
-  console.error("Game audience import failed:", error);
+module.exports = {
+  importGameAudience,
+};
 
-  try {
-    await mongoose.connection.close();
-  } catch (_) {}
+// Manual run support:
+// node scripts/importGameAudience.js
+if (require.main === module) {
+  importGameAudience()
+    .then(async () => {
+      console.log("Manual game audience import finished.");
 
-  process.exit(1);
-});
+      try {
+        await mongoose.connection.close();
+      } catch (_) {}
+
+      process.exit(0);
+    })
+    .catch(async (error) => {
+      console.error("Manual game audience import failed:", error);
+
+      try {
+        await mongoose.connection.close();
+      } catch (_) {}
+
+      process.exit(1);
+    });
+}

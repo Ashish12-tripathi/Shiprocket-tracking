@@ -1,10 +1,14 @@
 require("dotenv").config();
 
+console.log("Game audience cron file loaded");
+
 const cron = require("node-cron");
 const connectDB = require("./config/db");
 const { processDueAbandonedCarts } = require("./services/cron.service");
+const { importGameAudience } = require("./scripts/import-game-audience-from-db");
 
 let isRunning = false;
+let isImportRunning = false;
 
 async function runCronJob() {
   if (isRunning) {
@@ -35,6 +39,34 @@ async function runCronJob() {
   }
 }
 
+async function runGameAudienceImportJob() {
+  if (isImportRunning) {
+    console.log("Previous game audience import is still running. Skipping this run.");
+    return;
+  }
+
+  if (process.env.AUTO_IMPORT_GAME_AUDIENCE === "false") {
+    console.log("Game audience import disabled via AUTO_IMPORT_GAME_AUDIENCE=false");
+    return;
+  }
+
+  isImportRunning = true;
+
+  try {
+    console.log("Game audience import cron started:", new Date().toISOString());
+    await importGameAudience();
+    console.log("Game audience import cron completed:", new Date().toISOString());
+  } catch (error) {
+    console.error("Game audience import cron failed:", {
+      message: error.message,
+      stack: error.stack,
+      time: new Date().toISOString(),
+    });
+  } finally {
+    isImportRunning = false;
+  }
+}
+
 async function startCronWorker() {
   try {
     await connectDB();
@@ -49,11 +81,31 @@ async function startCronWorker() {
 
     cron.schedule(
       `*/${intervalMinutes} * * * *`,
-      runCronJob,
+      async () => {
+        await runCronJob();
+      },
       {
         timezone: process.env.CRON_TIMEZONE || "Asia/Kolkata",
+        scheduled: true,
       }
     );
+
+    cron.schedule(
+      "*/1 * * * *",
+      async () => {
+        await runGameAudienceImportJob();
+      },
+      {
+        timezone: process.env.CRON_TIMEZONE || "Asia/Kolkata",
+        scheduled: true,
+      }
+    );
+
+    console.log("Game audience import cron scheduled every 1 minute.");
+    console.log("Game audience cron schedule registered");
+
+    await runCronJob();
+    await runGameAudienceImportJob();
   } catch (error) {
     console.error("Cron worker startup failed:", error);
     process.exit(1);
