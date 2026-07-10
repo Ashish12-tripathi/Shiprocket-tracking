@@ -88,9 +88,12 @@ const convertedCustomerSchema = new mongoose.Schema(
       },
     },
 
-    utmSource: String,
-    utmMedium: String,
-    utmCampaign: String,
+  utmId: String,
+utmSource: String,
+utmMedium: String,
+utmCampaign: String,
+utmTerm: String,
+utmContent: String,
 
     optOut: {
       type: Boolean,
@@ -106,6 +109,6 @@ const convertedCustomerSchema = new mongoose.Schema(
 
 convertedCustomerSchema.index({ lastConvertedAt: -1 });
 convertedCustomerSchema.index({ totalOrders: -1 });
-convertedCustomerSchema.index({ utmSource: 1, utmMedium: 1, utmCampaign: 1 });
+convertedCustomerSchema.index({ utmSource: 1, utmMedium: 1, utmCampaign: 1 ,utmContent: 1, });
 
 module.exports = mongoose.model("ConvertedCustomer", convertedCustomerSchema);

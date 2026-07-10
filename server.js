@@ -10,6 +10,7 @@ const shiprocketRoutes = require("./routes/shiprocket.routes");
 const abandonedCartRoutes = require("./routes/abandonedCart.routes");
 const cronRoutes = require("./routes/cron.routes");
 const campaignRoutes = require("./routes/campaign.routes");
+const interaktReportRoutes = require("./routes/interaktReport.routes");
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use("/api", shiprocketRoutes);
 app.use("/", abandonedCartRoutes);
 app.use("/cron", cronRoutes);
 app.use("/campaign", campaignRoutes);
+app.use("/interakt", interaktReportRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
