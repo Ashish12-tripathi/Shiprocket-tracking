@@ -232,4 +232,5 @@ async function sendInteraktCampaignTemplate(contact, templateName, bodyValues = 
 
 module.exports = {
   sendInteraktTemplate,
+  sendInteraktCampaignTemplate,
 };
