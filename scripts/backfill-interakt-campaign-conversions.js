@@ -8,11 +8,20 @@ const {
 } = require("../services/interaktCampaignSync.service");
 
 async function backfillInteraktCampaignConversions() {
-  if (!process.env.MONGO_URI) {
-    throw new Error("MONGO_URI is missing in .env");
+  const mongoUri =
+    process.env.MONGODB_URI ||
+    process.env.MONGO_URI ||
+    process.env.DATABASE_URL ||
+    process.env.DB_URI ||
+    process.env.MONGO_URL;
+
+  if (!mongoUri) {
+    throw new Error(
+      "Mongo connection string missing. Add MONGODB_URI or MONGO_URI in .env"
+    );
   }
 
-  await mongoose.connect(process.env.MONGO_URI);
+  await mongoose.connect(mongoUri);
 
   console.log("MongoDB connected");
   console.log("Backfill started...");
@@ -23,20 +32,38 @@ async function backfillInteraktCampaignConversions() {
         utmSource: "whatsapp",
         utmMedium: { $in: ["interakt", "interakt_campaign"] },
         utmCampaign: {
-          $in: ["monsoon_ordered_customers", "monsoon_abandoned_carts"],
+          $in: [
+            "monsoon_ordered_customers_tilljune2026",
+            "monsoon_ordered_customers_tilljune2026_ip",
+            "monsoon_ordered_customers",
+            "monsoon_abandoned_carts_tillnow_2026",
+            "monsoon_abandoned_carts",
+          ],
         },
       },
       {
         "campaignAttribution.recentCampaignKeys": {
           $in: [
             "monsoon_ordered_customers_tilljune2026",
+            "monsoon_ordered_customers_tilljune2026_ip",
             "monsoon_abandoned_carts_tillnow_2026",
           ],
         },
       },
       {
         "campaignAttribution.recentTemplates": {
-          $in: ["orderplacedcustomertilljune", "abandoned_cart_tillnow"],
+          $in: [
+            "monsoon_ordered_customers_tilljune2026",
+            "monsoon_ordered_customers_tilljune2026_ip",
+            "orderplacedcustomertilljune",
+            "monsoon_abandoned_carts_tillnow_2026",
+            "abandoned_cart_tillnow",
+          ],
+        },
+      },
+      {
+        "campaignAttribution.recentAudienceTypes": {
+          $in: ["converted_customer", "abandoned_cart"],
         },
       },
     ],

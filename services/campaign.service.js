@@ -5,8 +5,93 @@ const ConvertedCustomer = require("../models/ConvertedCustomer");
 const CampaignLog = require("../models/CampaignLog");
 const { sendInteraktCampaignTemplate } = require("./interakt.service");
 
+const STATIC_IMAGE_ONLY_TEMPLATES = new Set([
+  "monsoon_abandoned_carts_tillnow_2026",
+  "monsoon_ordered_customers_tilljune2026_ip",
+]);
+
 function getName(contact) {
   return contact.customerName || contact.name || "Customer";
+}
+
+function normalizeIndianPhone(contact = {}) {
+  const rawPhone =
+    contact.phoneE164 ||
+    contact.phoneNumber ||
+    contact.phone ||
+    contact.mobile ||
+    contact.customerPhone ||
+    "";
+
+  let digits = String(rawPhone).replace(/\D/g, "");
+
+  if (!digits) {
+    return null;
+  }
+
+  if (digits.startsWith("91") && digits.length === 12) {
+    digits = digits.slice(2);
+  }
+
+  if (digits.startsWith("0") && digits.length === 11) {
+    digits = digits.slice(1);
+  }
+
+  if (!/^[6-9][0-9]{9}$/.test(digits)) {
+    return null;
+  }
+
+  return {
+    countryCode: "+91",
+    phoneNumber: digits,
+    phoneE164: `+91${digits}`,
+  };
+}
+
+function isValidUrl(url) {
+  return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
+function toBoolean(value) {
+  return value === true || value === "true";
+}
+
+function appendCampaignUtm(url, campaignKey, audienceType, templateName) {
+  if (!url || !isValidUrl(url)) {
+    return url;
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+
+    if (!parsedUrl.searchParams.get("utm_id")) {
+      parsedUrl.searchParams.set("utm_id", campaignKey);
+    }
+
+    if (!parsedUrl.searchParams.get("utm_source")) {
+      parsedUrl.searchParams.set("utm_source", "whatsapp");
+    }
+
+    if (!parsedUrl.searchParams.get("utm_medium")) {
+      parsedUrl.searchParams.set("utm_medium", "interakt_campaign");
+    }
+
+    if (!parsedUrl.searchParams.get("utm_campaign")) {
+      parsedUrl.searchParams.set("utm_campaign", campaignKey);
+    }
+
+    if (!parsedUrl.searchParams.get("utm_term")) {
+      parsedUrl.searchParams.set("utm_term", audienceType);
+    }
+
+    if (!parsedUrl.searchParams.get("utm_content")) {
+      parsedUrl.searchParams.set("utm_content", templateName);
+    }
+
+    return parsedUrl.toString();
+  } catch (error) {
+    return url;
+  }
 }
 
 async function hasCampaignAlreadySent(campaignKey, phoneE164) {
@@ -58,56 +143,213 @@ async function saveCampaignLog({
   );
 }
 
+function getHeaderMediaUrlForAudience(audienceType, campaignOptions = {}) {
+  if (audienceType === "abandoned_cart") {
+    return (
+      campaignOptions.abandonedHeaderMediaUrl ||
+      campaignOptions.headerMediaUrl ||
+      campaignOptions.campaignImageUrl ||
+      null
+    );
+  }
+
+  if (audienceType === "converted_customer") {
+    return (
+      campaignOptions.convertedCustomerHeaderMediaUrl ||
+      campaignOptions.headerMediaUrl ||
+      campaignOptions.campaignImageUrl ||
+      null
+    );
+  }
+
+  if (audienceType === "game_winner") {
+    return (
+      campaignOptions.gameWinnerHeaderMediaUrl ||
+      campaignOptions.headerMediaUrl ||
+      campaignOptions.campaignImageUrl ||
+      null
+    );
+  }
+
+  if (audienceType === "game_voter") {
+    return (
+      campaignOptions.gameVoterHeaderMediaUrl ||
+      campaignOptions.headerMediaUrl ||
+      campaignOptions.campaignImageUrl ||
+      null
+    );
+  }
+
+  return campaignOptions.headerMediaUrl || campaignOptions.campaignImageUrl || null;
+}
+
+function getBodyValuesForTemplate({ templateName, audienceType, contact }) {
+  if (STATIC_IMAGE_ONLY_TEMPLATES.has(templateName)) {
+    return [];
+  }
+
+  if (audienceType === "abandoned_cart") {
+    return [
+      getName(contact),
+      contact.productName || "your Omichef product",
+    ];
+  }
+
+  if (audienceType === "converted_customer") {
+    return [getName(contact)];
+  }
+
+  if (audienceType === "game_winner") {
+    return [
+      getName(contact),
+      contact.dishName || "your dish",
+    ];
+  }
+
+  if (audienceType === "game_voter") {
+    return [getName(contact)];
+  }
+
+  return [];
+}
+
 async function sendToContacts({
   contacts,
   campaignKey,
   audienceType,
   sourceCollection,
   templateName,
-  buildBodyValues,
+  campaignOptions = {},
 }) {
   const results = [];
 
   for (const contact of contacts) {
+    const plainContact =
+      typeof contact.toObject === "function" ? contact.toObject() : contact;
+
     try {
-      if (!contact.phoneE164) {
+      const normalizedPhone = normalizeIndianPhone(plainContact);
+
+      if (!normalizedPhone) {
+        const message = `Invalid or missing Indian phone number: ${
+          plainContact.phoneE164 || plainContact.phoneNumber || "empty"
+        }`;
+
+        const failedContact = {
+          ...plainContact,
+          phoneE164: plainContact.phoneE164 || null,
+        };
+
+        if (failedContact.phoneE164) {
+          await saveCampaignLog({
+            campaignKey,
+            audienceType,
+            contact: failedContact,
+            templateName,
+            status: "failed",
+            error: message,
+            sourceCollection,
+          });
+        }
+
         results.push({
-          phone: null,
+          phone: plainContact.phoneE164 || plainContact.phoneNumber || null,
+          sent: false,
           skipped: true,
-          reason: "Missing phoneE164",
+          reason: message,
           audienceType,
         });
+
         continue;
       }
 
-      const alreadySent = await hasCampaignAlreadySent(campaignKey, contact.phoneE164);
+      const contactForSend = {
+        ...plainContact,
+        ...normalizedPhone,
+        campaignKey,
+      };
+
+      const alreadySent = await hasCampaignAlreadySent(
+        campaignKey,
+        contactForSend.phoneE164
+      );
 
       if (alreadySent) {
         results.push({
-          phone: contact.phoneE164,
+          phone: contactForSend.phoneE164,
           skipped: true,
           reason: "Campaign already sent to this phone",
           audienceType,
         });
+
         continue;
       }
 
-      const plainContact =
-        typeof contact.toObject === "function" ? contact.toObject() : contact;
+      const isStaticImageOnlyTemplate =
+        STATIC_IMAGE_ONLY_TEMPLATES.has(templateName);
+
+      const shouldSendDynamicButton =
+        !isStaticImageOnlyTemplate &&
+        (toBoolean(campaignOptions.sendDynamicButton) ||
+          toBoolean(campaignOptions.hasDynamicButton));
+
+      let buttonUrl = null;
+
+      if (shouldSendDynamicButton) {
+        const checkoutUrl =
+          campaignOptions.buttonUrl ||
+          campaignOptions.checkoutUrl ||
+          contactForSend.checkoutUrl ||
+          contactForSend.lastCheckoutUrl ||
+          null;
+
+        buttonUrl = checkoutUrl
+          ? appendCampaignUtm(checkoutUrl, campaignKey, audienceType, templateName)
+          : null;
+      }
+
+      const bodyValues = getBodyValuesForTemplate({
+        templateName,
+        audienceType,
+        contact: contactForSend,
+      });
 
       const response = await sendInteraktCampaignTemplate(
-        {
-          ...plainContact,
-          campaignKey,
-        },
+        contactForSend,
         templateName,
-        buildBodyValues(plainContact)
+        bodyValues,
+        {
+          headerMediaUrl: getHeaderMediaUrlForAudience(
+            audienceType,
+            campaignOptions
+          ),
+
+          abandonedHeaderMediaUrl:
+            campaignOptions.abandonedHeaderMediaUrl || null,
+
+          convertedCustomerHeaderMediaUrl:
+            campaignOptions.convertedCustomerHeaderMediaUrl || null,
+
+          gameWinnerHeaderMediaUrl:
+            campaignOptions.gameWinnerHeaderMediaUrl || null,
+
+          gameVoterHeaderMediaUrl:
+            campaignOptions.gameVoterHeaderMediaUrl || null,
+
+          campaignImageUrl: campaignOptions.campaignImageUrl || null,
+
+          sendDynamicButton: shouldSendDynamicButton,
+          hasDynamicButton: shouldSendDynamicButton,
+
+          buttonUrl,
+          checkoutUrl: buttonUrl,
+        }
       );
 
       await saveCampaignLog({
         campaignKey,
         audienceType,
-        contact: plainContact,
+        contact: contactForSend,
         templateName,
         status: "sent",
         sourceCollection,
@@ -115,7 +357,7 @@ async function sendToContacts({
       });
 
       results.push({
-        phone: plainContact.phoneE164,
+        phone: contactForSend.phoneE164,
         sent: true,
         audienceType,
       });
@@ -124,21 +366,32 @@ async function sendToContacts({
         ? JSON.stringify(error.response.data)
         : error.message;
 
-      const plainContact =
-        typeof contact.toObject === "function" ? contact.toObject() : contact;
+      const normalizedPhone = normalizeIndianPhone(plainContact);
 
-      await saveCampaignLog({
-        campaignKey,
-        audienceType,
-        contact: plainContact,
-        templateName,
-        status: "failed",
-        error: message,
-        sourceCollection,
-      });
+      const contactForLog = {
+        ...plainContact,
+        ...(normalizedPhone || {}),
+        phoneE164:
+          normalizedPhone?.phoneE164 ||
+          plainContact.phoneE164 ||
+          plainContact.phoneNumber ||
+          null,
+      };
+
+      if (contactForLog.phoneE164) {
+        await saveCampaignLog({
+          campaignKey,
+          audienceType,
+          contact: contactForLog,
+          templateName,
+          status: "failed",
+          error: message,
+          sourceCollection,
+        });
+      }
 
       results.push({
-        phone: plainContact.phoneE164,
+        phone: contactForLog.phoneE164,
         sent: false,
         audienceType,
         error: message,
@@ -149,7 +402,12 @@ async function sendToContacts({
   return results;
 }
 
-async function sendConvertedCustomerCampaign({ campaignKey, templateName, limit = 500 }) {
+async function sendConvertedCustomerCampaign({
+  campaignKey,
+  templateName,
+  limit = 500,
+  campaignOptions = {},
+}) {
   const contacts = await ConvertedCustomer.find({
     optOut: false,
     phoneE164: { $exists: true, $ne: null },
@@ -163,11 +421,16 @@ async function sendConvertedCustomerCampaign({ campaignKey, templateName, limit 
     audienceType: "converted_customer",
     sourceCollection: "convertedcustomers",
     templateName,
-    buildBodyValues: (contact) => [getName(contact)],
+    campaignOptions,
   });
 }
 
-async function sendGameWinnerCampaign({ campaignKey, templateName, limit = 500 }) {
+async function sendGameWinnerCampaign({
+  campaignKey,
+  templateName,
+  limit = 500,
+  campaignOptions = {},
+}) {
   const contacts = await GameWinnerContact.find({
     validPhone: true,
     optOut: false,
@@ -182,14 +445,16 @@ async function sendGameWinnerCampaign({ campaignKey, templateName, limit = 500 }
     audienceType: "game_winner",
     sourceCollection: "gamewinnercontacts",
     templateName,
-    buildBodyValues: (contact) => [
-      getName(contact),
-      contact.dishName || "your dish",
-    ],
+    campaignOptions,
   });
 }
 
-async function sendGameVoterCampaign({ campaignKey, templateName, limit = 500 }) {
+async function sendGameVoterCampaign({
+  campaignKey,
+  templateName,
+  limit = 500,
+  campaignOptions = {},
+}) {
   const contacts = await GameVoterContact.find({
     validPhone: true,
     optOut: false,
@@ -204,11 +469,16 @@ async function sendGameVoterCampaign({ campaignKey, templateName, limit = 500 })
     audienceType: "game_voter",
     sourceCollection: "gamevotercontacts",
     templateName,
-    buildBodyValues: (contact) => [getName(contact)],
+    campaignOptions,
   });
 }
 
-async function sendAbandonedCartCampaign({ campaignKey, templateName, limit = 500 }) {
+async function sendAbandonedCartCampaign({
+  campaignKey,
+  templateName,
+  limit = 500,
+  campaignOptions = {},
+}) {
   const contacts = await AbandonedCart.aggregate([
     {
       $match: {
@@ -242,23 +512,40 @@ async function sendAbandonedCartCampaign({ campaignKey, templateName, limit = 50
     audienceType: "abandoned_cart",
     sourceCollection: "abandonedcarts",
     templateName,
-    buildBodyValues: (contact) => [
-      getName(contact),
-      contact.productName || "your Omichef product",
-    ],
+    campaignOptions,
   });
 }
 
 async function sendMultiAudienceCampaign({
   campaignKey,
+
   convertedCustomerTemplateName,
   gameWinnerTemplateName,
   gameVoterTemplateName,
   abandonedTemplateName,
+
   convertedCustomerLimit = 500,
   gameWinnerLimit = 500,
   gameVoterLimit = 500,
   abandonedLimit = 500,
+
+  headerMediaUrl,
+  campaignImageUrl,
+
+  convertedCustomerHeaderMediaUrl,
+  gameWinnerHeaderMediaUrl,
+  gameVoterHeaderMediaUrl,
+  abandonedHeaderMediaUrl,
+
+  convertedCustomerButtonUrl,
+  gameWinnerButtonUrl,
+  gameVoterButtonUrl,
+  abandonedButtonUrl,
+
+  convertedCustomerSendDynamicButton = false,
+  gameWinnerSendDynamicButton = false,
+  gameVoterSendDynamicButton = false,
+  abandonedSendDynamicButton = false,
 }) {
   if (!campaignKey) {
     throw new Error("campaignKey is required.");
@@ -266,21 +553,18 @@ async function sendMultiAudienceCampaign({
 
   const response = {};
 
-  /*
-    Priority order:
-    1. Converted customers
-    2. Game winners
-    3. Game voters
-    4. Abandoned cart users
-
-    campaignlogs prevents duplicate send to same phone for same campaignKey.
-  */
-
   if (convertedCustomerTemplateName) {
     const results = await sendConvertedCustomerCampaign({
       campaignKey,
       templateName: convertedCustomerTemplateName,
       limit: convertedCustomerLimit,
+      campaignOptions: {
+        headerMediaUrl,
+        campaignImageUrl,
+        convertedCustomerHeaderMediaUrl,
+        buttonUrl: convertedCustomerButtonUrl,
+        sendDynamicButton: convertedCustomerSendDynamicButton,
+      },
     });
 
     response.convertedCustomers = {
@@ -294,6 +578,13 @@ async function sendMultiAudienceCampaign({
       campaignKey,
       templateName: gameWinnerTemplateName,
       limit: gameWinnerLimit,
+      campaignOptions: {
+        headerMediaUrl,
+        campaignImageUrl,
+        gameWinnerHeaderMediaUrl,
+        buttonUrl: gameWinnerButtonUrl,
+        sendDynamicButton: gameWinnerSendDynamicButton,
+      },
     });
 
     response.gameWinners = {
@@ -307,6 +598,13 @@ async function sendMultiAudienceCampaign({
       campaignKey,
       templateName: gameVoterTemplateName,
       limit: gameVoterLimit,
+      campaignOptions: {
+        headerMediaUrl,
+        campaignImageUrl,
+        gameVoterHeaderMediaUrl,
+        buttonUrl: gameVoterButtonUrl,
+        sendDynamicButton: gameVoterSendDynamicButton,
+      },
     });
 
     response.gameVoters = {
@@ -320,6 +618,13 @@ async function sendMultiAudienceCampaign({
       campaignKey,
       templateName: abandonedTemplateName,
       limit: abandonedLimit,
+      campaignOptions: {
+        headerMediaUrl,
+        campaignImageUrl,
+        abandonedHeaderMediaUrl,
+        buttonUrl: abandonedButtonUrl,
+        sendDynamicButton: abandonedSendDynamicButton,
+      },
     });
 
     response.abandonedCarts = {

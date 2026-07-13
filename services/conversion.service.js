@@ -5,6 +5,10 @@ const {
   syncConvertedCustomerToInteraktCampaignCollections,
 } = require("./interaktCampaignSync.service");
 
+const {
+  syncConvertedCustomerToAbandonedMessageAttributedCollection,
+} = require("./abandonedMessageAttributionSync.service");
+
 function normalizeIndianPhone(rawPhone) {
   if (!rawPhone) return null;
 
@@ -363,13 +367,21 @@ async function saveConvertedCustomerFromShopifyOrder({
   );
 
   /*
-    New sync logic:
-    After converted customer is saved/updated, fetch latest record
-    and automatically copy it into the correct Interakt campaign DB
-    if its UTM/campaign attribution matches one of your two campaigns.
+    Post-conversion sync logic:
+    After converted customer is saved/updated, fetch latest record and sync into:
+    1. Interakt campaign conversion DBs
+       - interakt_abandoned_cart_conversions
+       - interakt_ordered_customer_conversions
+
+    2. Abandoned message attribution conversion DB
+       - abandoned_message_attributed_conversions
+       - condition: abandonedMessageAttribution.lastMessageNumberBeforeConversion > 0
+
+    Both syncs are wrapped in try/catch so the main converted customer save is not harmed.
   */
 
   let interaktCampaignSyncResult = null;
+  let abandonedMessageAttributionSyncResult = null;
 
   try {
     const updatedConvertedCustomer = await ConvertedCustomer.findOne({
@@ -381,9 +393,14 @@ async function saveConvertedCustomerFromShopifyOrder({
         await syncConvertedCustomerToInteraktCampaignCollections(
           updatedConvertedCustomer
         );
+
+      abandonedMessageAttributionSyncResult =
+        await syncConvertedCustomerToAbandonedMessageAttributedCollection(
+          updatedConvertedCustomer
+        );
     }
   } catch (syncError) {
-    console.error("Interakt campaign sync failed for converted customer:", {
+    console.error("Post-conversion sync failed for converted customer:", {
       customerKey,
       phoneE164,
       email,
@@ -400,6 +417,7 @@ async function saveConvertedCustomerFromShopifyOrder({
     utmSaved: Object.keys(utmSet).length > 0,
     utmSet,
     interaktCampaignSyncResult,
+    abandonedMessageAttributionSyncResult,
   };
 }
 
