@@ -2,21 +2,46 @@ const InteraktOrderedCustomerConversion = require("../models/InteraktOrderedCust
 const InteraktAbandonedCartConversion = require("../models/InteraktAbandonedCartConversion");
 
 const ORDERED_CUSTOMER_CAMPAIGN = {
-  campaignKey: "monsoon_ordered_customers_tilljune2026",
-  templateName: "orderplacedcustomertilljune",
-  audienceType: "converted_customer",
-  utmCampaign: "monsoon_ordered_customers",
-  utmContent: "orderplacedcustomertilljune",
+
+  campaignKey:
+  "monsoon_ordered_customers_tilljune2026_ip",
+
+  templateName:
+  "monsoon_ordered_customers_tilljune2026_ip",
+
+  audienceType:
+  "converted_customer",
+
+
+  utmCampaign:
+  "monsoon_ordered_customers_tilljune2026_ip",
+
+
+  utmContent:
+  "monsoon_ordered_customers_tilljune2026_ip"
+
 };
 
 const ABANDONED_CART_CAMPAIGN = {
-  campaignKey: "monsoon_abandoned_carts_tillnow_2026",
-  templateName: "abandoned_cart_tillnow",
-  audienceType: "abandoned_cart",
-  utmCampaign: "monsoon_abandoned_carts",
-  utmContent: "abandoned_cart_tillnow",
-};
 
+  campaignKey:
+  "monsoon_abandoned_carts_tillnow_2026",
+
+  templateName:
+  "monsoon_abandoned_carts_tillnow_2026",
+
+  audienceType:
+  "abandoned_cart",
+
+
+  utmCampaign:
+  "monsoon_abandoned_carts_tillnow_2026",
+
+
+  utmContent:
+  "monsoon_abandoned_carts_tillnow_2026"
+
+};
 function normalizeString(value) {
   if (!value) return "";
   return String(value).trim().toLowerCase();
@@ -31,50 +56,45 @@ function includesValue(arrayValue, expectedValue) {
 }
 
 function getCampaignMatchType(convertedCustomer, campaignConfig) {
-  const utmCampaign = normalizeString(convertedCustomer.utmCampaign);
-  const utmContent = normalizeString(convertedCustomer.utmContent);
   const utmSource = normalizeString(convertedCustomer.utmSource);
   const utmMedium = normalizeString(convertedCustomer.utmMedium);
+  const utmCampaign = normalizeString(convertedCustomer.utmCampaign);
+  const utmContent = normalizeString(convertedCustomer.utmContent);
 
-  const expectedUtmCampaign = normalizeString(campaignConfig.utmCampaign);
-  const expectedUtmContent = normalizeString(campaignConfig.utmContent);
-
-  const campaignKeys =
-    convertedCustomer?.campaignAttribution?.recentCampaignKeys || [];
-  const templates =
-    convertedCustomer?.campaignAttribution?.recentTemplates || [];
-  const audienceTypes =
-    convertedCustomer?.campaignAttribution?.recentAudienceTypes || [];
-
-  const matchedByUtmCampaign =
-    utmCampaign && expectedUtmCampaign && utmCampaign === expectedUtmCampaign;
-
-  const matchedByUtmContent =
-    utmContent && expectedUtmContent && utmContent === expectedUtmContent;
-
-  const matchedByCampaignKey = includesValue(
-    campaignKeys,
-    campaignConfig.campaignKey
+  const expectedCampaign = normalizeString(
+    campaignConfig.utmCampaign
   );
 
-  const matchedByTemplate = includesValue(templates, campaignConfig.templateName);
-
-  const matchedByAudienceType = includesValue(
-    audienceTypes,
-    campaignConfig.audienceType
+  const expectedContent = normalizeString(
+    campaignConfig.utmContent
   );
 
-  const isWhatsappInterakt =
-    utmSource === "whatsapp" &&
-    ["interakt", "interakt_campaign"].includes(utmMedium);
+  const sourceMatch =
+    utmSource === "whatsapp";
 
-  if ((matchedByUtmCampaign || matchedByUtmContent) && isWhatsappInterakt) {
+  const mediumMatch =
+    [
+      "interakt",
+      "interakt_campaign",
+    ].includes(utmMedium);
+
+
+  const campaignMatch =
+    utmCampaign === expectedCampaign;
+
+
+  const contentMatch =
+    utmContent === expectedContent;
+
+
+  if (
+    sourceMatch &&
+    mediumMatch &&
+    (campaignMatch || contentMatch)
+  ) {
     return "utm";
   }
 
-  if (matchedByCampaignKey || matchedByTemplate || matchedByAudienceType) {
-    return "campaignAttribution";
-  }
 
   return null;
 }
