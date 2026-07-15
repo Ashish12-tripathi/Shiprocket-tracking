@@ -7,7 +7,9 @@ const { sendInteraktCampaignTemplate } = require("./interakt.service");
 
 const STATIC_IMAGE_ONLY_TEMPLATES = new Set([
   "monsoon_abandoned_carts_tillnow_2026",
+  "monsoon_abandoned_carts_tillnow2_2026",
   "monsoon_ordered_customers_tilljune2026_ip",
+  "monsoon_ordered_customers2_tilljune2026",
 ]);
 
 function getName(contact) {
@@ -60,6 +62,7 @@ function appendCampaignUtm(url, campaignKey, audienceType, templateName) {
   if (!url || !isValidUrl(url)) {
     return url;
   }
+ 
 
   try {
     const parsedUrl = new URL(url);
@@ -92,6 +95,12 @@ function appendCampaignUtm(url, campaignKey, audienceType, templateName) {
   } catch (error) {
     return url;
   }
+}
+ function shouldAttachCampaignUtm(audienceType) {
+  return [
+    "abandoned_cart",
+    "converted_customer",
+  ].includes(audienceType);
 }
 
 async function hasCampaignAlreadySent(campaignKey, phoneE164) {
@@ -289,24 +298,37 @@ async function sendToContacts({
         STATIC_IMAGE_ONLY_TEMPLATES.has(templateName);
 
       const shouldSendDynamicButton =
-        !isStaticImageOnlyTemplate &&
-        (toBoolean(campaignOptions.sendDynamicButton) ||
-          toBoolean(campaignOptions.hasDynamicButton));
+      toBoolean(campaignOptions.sendDynamicButton) ||
+      toBoolean(campaignOptions.hasDynamicButton);
+
+
+      const shouldAttachUtm =
+       shouldAttachCampaignUtm(audienceType);
 
       let buttonUrl = null;
 
-      if (shouldSendDynamicButton) {
-        const checkoutUrl =
-          campaignOptions.buttonUrl ||
-          campaignOptions.checkoutUrl ||
-          contactForSend.checkoutUrl ||
-          contactForSend.lastCheckoutUrl ||
-          null;
+const checkoutUrl =
+  campaignOptions.buttonUrl ||
+  campaignOptions.checkoutUrl ||
+  contactForSend.checkoutUrl ||
+  contactForSend.lastCheckoutUrl ||
+  null;
 
-        buttonUrl = checkoutUrl
-          ? appendCampaignUtm(checkoutUrl, campaignKey, audienceType, templateName)
-          : null;
-      }
+
+if (checkoutUrl && shouldAttachUtm) {
+
+  buttonUrl = appendCampaignUtm(
+    checkoutUrl,
+    campaignKey,
+    audienceType,
+    templateName
+  );
+
+} else if (checkoutUrl && shouldSendDynamicButton) {
+
+  buttonUrl = checkoutUrl;
+
+}
 
       const bodyValues = getBodyValuesForTemplate({
         templateName,
@@ -623,7 +645,7 @@ async function sendMultiAudienceCampaign({
         campaignImageUrl,
         abandonedHeaderMediaUrl,
         buttonUrl: abandonedButtonUrl,
-        sendDynamicButton: abandonedSendDynamicButton,
+        sendDynamicButton: true,
       },
     });
 

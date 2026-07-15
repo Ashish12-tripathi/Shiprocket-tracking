@@ -31,6 +31,47 @@ function normalizeIndianPhone(rawPhone) {
   return null;
 }
 
+function extractUtmFromMarketingEvents(order) {
+  if (!Array.isArray(order?.marketing_events)) {
+    return {};
+  }
+
+  for (const event of order.marketing_events) {
+
+    const marketingData =
+      event?.marketing_event_data || {};
+
+    return {
+      utmSource:
+        cleanUtmValue(
+          marketingData.utm_source
+        ),
+
+      utmMedium:
+        cleanUtmValue(
+          marketingData.utm_medium
+        ),
+
+      utmCampaign:
+        cleanUtmValue(
+          marketingData.utm_campaign
+        ),
+
+      utmContent:
+        cleanUtmValue(
+          marketingData.utm_content
+        ),
+
+      utmTerm:
+        cleanUtmValue(
+          marketingData.utm_term
+        ),
+    };
+  }
+
+  return {};
+}
+
 function getOrderPhone(order) {
   return (
     order.phone ||
@@ -171,41 +212,55 @@ function parseUtmFromNoteAttributes(noteAttributes) {
 }
 
 function extractUtmFromShopifyOrder(order) {
-  const fromNoteAttributes = parseUtmFromNoteAttributes(order?.note_attributes);
-  const fromLandingSite = parseUtmFromUrl(order?.landing_site);
-  const fromReferringSite = parseUtmFromUrl(order?.referring_site);
+  const fromNoteAttributes =
+  parseUtmFromNoteAttributes(order?.note_attributes);
 
-  return {
-    utmId:
-      fromNoteAttributes.utmId ||
-      fromLandingSite.utmId ||
-      fromReferringSite.utmId,
+const fromLandingSite =
+  parseUtmFromUrl(order?.landing_site);
 
-    utmSource:
-      fromNoteAttributes.utmSource ||
-      fromLandingSite.utmSource ||
-      fromReferringSite.utmSource,
+const fromReferringSite =
+  parseUtmFromUrl(order?.referring_site);
 
-    utmMedium:
-      fromNoteAttributes.utmMedium ||
-      fromLandingSite.utmMedium ||
-      fromReferringSite.utmMedium,
+const fromMarketingEvents =
+  extractUtmFromMarketingEvents(order);
 
-    utmCampaign:
-      fromNoteAttributes.utmCampaign ||
-      fromLandingSite.utmCampaign ||
-      fromReferringSite.utmCampaign,
+return {
+  utmId:
+    fromNoteAttributes.utmId ||
+    fromMarketingEvents.utmId ||
+    fromLandingSite.utmId ||
+    fromReferringSite.utmId,
 
-    utmTerm:
-      fromNoteAttributes.utmTerm ||
-      fromLandingSite.utmTerm ||
-      fromReferringSite.utmTerm,
+  utmSource:
+    fromNoteAttributes.utmSource ||
+    fromMarketingEvents.utmSource ||
+    fromLandingSite.utmSource ||
+    fromReferringSite.utmSource,
 
-    utmContent:
-      fromNoteAttributes.utmContent ||
-      fromLandingSite.utmContent ||
-      fromReferringSite.utmContent,
-  };
+  utmMedium:
+    fromNoteAttributes.utmMedium ||
+    fromMarketingEvents.utmMedium ||
+    fromLandingSite.utmMedium ||
+    fromReferringSite.utmMedium,
+
+  utmCampaign:
+    fromNoteAttributes.utmCampaign ||
+    fromMarketingEvents.utmCampaign ||
+    fromLandingSite.utmCampaign ||
+    fromReferringSite.utmCampaign,
+
+  utmTerm:
+    fromNoteAttributes.utmTerm ||
+    fromMarketingEvents.utmTerm ||
+    fromLandingSite.utmTerm ||
+    fromReferringSite.utmTerm,
+
+  utmContent:
+    fromNoteAttributes.utmContent ||
+    fromMarketingEvents.utmContent ||
+    fromLandingSite.utmContent ||
+    fromReferringSite.utmContent,
+};
 }
 
 function buildUtmSet({ order, latestCart }) {

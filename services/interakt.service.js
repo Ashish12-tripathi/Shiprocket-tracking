@@ -3,16 +3,29 @@ const axios = require("axios");
 const STATIC_IMAGE_ONLY_TEMPLATES = new Set([
   "monsoon_abandoned_carts_tillnow_2026",
   "monsoon_ordered_customers_tilljune2026",
+  "monsoon_ordered_customers2_tilljune2026",
+  "monsoon_abandoned_carts_tillnow2_2026",
 ]);
 
 function isStaticImageOnlyTemplate(templateName) {
   return STATIC_IMAGE_ONLY_TEMPLATES.has(templateName);
 }
 
+function isMessage1Template(templateName) {
+  return templateName === process.env.INTERAKT_TEMPLATE_1;
+}
+
+function isFollowUpTemplate(templateName) {
+  return (
+    templateName === process.env.INTERAKT_TEMPLATE_2 ||
+    templateName === process.env.INTERAKT_TEMPLATE_3
+  );
+}
+
 function isImageTemplate(templateName) {
   return (
-    templateName === process.env.INTERAKT_TEMPLATE_1 &&
-    process.env.INTERAKT_TEMPLATE_1_IMAGE === "true"
+    isMessage1Template(templateName) ||
+    isFollowUpTemplate(templateName)
   );
 }
 
@@ -45,7 +58,7 @@ function normalizeIndianPhoneForInterakt(contact = {}) {
 
   if (!/^[6-9][0-9]{9}$/.test(digits)) {
     throw new Error(
-      `Invalid Indian WhatsApp number for Interakt: ${rawPhone}. Normalized value: ${digits}`
+      `Invalid Indian WhatsApp number: ${rawPhone}`
     );
   }
 
@@ -56,302 +69,388 @@ function normalizeIndianPhoneForInterakt(contact = {}) {
   };
 }
 
-function getSafeImageUrl(cart = {}) {
-  const imageUrl =
-    cart.productImageUrl ||
-    cart.imageUrl ||
-    cart.headerMediaUrl ||
-    cart.abandonedHeaderMediaUrl ||
-    cart.campaignImageUrl ||
-    process.env.INTERAKT_CAMPAIGN_IMAGE_URL ||
-    process.env.INTERAKT_FALLBACK_IMAGE_URL ||
-    null;
 
-  if (!imageUrl) return null;
+function getAbandonedCartImageUrl(cart, templateName) {
 
-  if (!isValidUrl(imageUrl)) {
-    console.warn("Invalid product/campaign image URL:", imageUrl);
-    return null;
+  // Message 1
+  // Product image
+  if (isMessage1Template(templateName)) {
+
+    const productImage =
+      cart.productImageUrl ||
+      cart.imageUrl ||
+      null;
+
+
+    if (!productImage) {
+      throw new Error(
+        "Product image missing for message 1"
+      );
+    }
+
+
+    return productImage;
   }
 
-  return imageUrl;
+
+  // Message 2 and 3
+  // Fixed campaign image
+  if (isFollowUpTemplate(templateName)) {
+
+    const followupImage =
+      process.env.INTERAKT_FOLLOWUP_IMAGE_URL;
+
+
+    if (!followupImage) {
+      throw new Error(
+        "INTERAKT_FOLLOWUP_IMAGE_URL missing"
+      );
+    }
+
+
+    return followupImage;
+  }
+
+
+  return (
+    cart.productImageUrl ||
+    process.env.INTERAKT_FALLBACK_IMAGE_URL ||
+    null
+  );
 }
 
+
 function getCampaignImageUrl(contact = {}, options = {}) {
+
   const imageUrl =
     options.headerMediaUrl ||
     options.abandonedHeaderMediaUrl ||
     options.convertedCustomerHeaderMediaUrl ||
-    options.gameWinnerHeaderMediaUrl ||
-    options.gameVoterHeaderMediaUrl ||
+    options.convertedCustomerHeaderMediaUrl ||
     options.campaignImageUrl ||
     contact.headerMediaUrl ||
-    contact.abandonedHeaderMediaUrl ||
-    contact.campaignImageUrl ||
-    contact.productImageUrl ||
     contact.imageUrl ||
     process.env.INTERAKT_CAMPAIGN_IMAGE_URL ||
     process.env.INTERAKT_FALLBACK_IMAGE_URL ||
     null;
 
+
   if (!imageUrl) {
     throw new Error(
-      "Campaign image URL missing. Pass headerMediaUrl/abandonedHeaderMediaUrl or add INTERAKT_CAMPAIGN_IMAGE_URL in .env."
+      "Campaign image missing"
     );
   }
 
+
   if (!isValidUrl(imageUrl)) {
-    throw new Error(`Invalid campaign image URL: ${imageUrl}`);
+    throw new Error(
+      `Invalid campaign image URL ${imageUrl}`
+    );
   }
+
 
   return imageUrl;
 }
 
+
 function getSafeCheckoutUrl(cart) {
+
   const checkoutUrl = cart.checkoutUrl;
 
+
   if (!checkoutUrl) {
-    throw new Error("Checkout URL missing.");
+    throw new Error(
+      "Checkout URL missing"
+    );
   }
 
-  if (!isValidUrl(checkoutUrl)) {
-    throw new Error(`Invalid checkout URL: ${checkoutUrl}`);
-  }
 
   return checkoutUrl;
 }
 
-function ensureInteraktEnv() {
-  if (!process.env.INTERAKT_API_KEY) {
-    throw new Error("INTERAKT_API_KEY missing.");
+
+function ensureInteraktEnv(){
+
+  if(!process.env.INTERAKT_API_KEY){
+    throw new Error(
+      "INTERAKT_API_KEY missing"
+    );
   }
 
-  if (!process.env.INTERAKT_API_URL) {
-    throw new Error("INTERAKT_API_URL missing.");
+
+  if(!process.env.INTERAKT_API_URL){
+    throw new Error(
+      "INTERAKT_API_URL missing"
+    );
   }
 }
 
-async function sendInteraktTemplate(cart, templateName) {
+
+
+async function sendInteraktTemplate(cart, templateName){
+
   ensureInteraktEnv();
 
-  if (!templateName) {
-    throw new Error("Interakt template name missing.");
-  }
 
-  const customerName = cart.customerName || "there";
-  const productName = cart.productName || "your Omichef cookware";
-  const normalizedPhone = normalizeIndianPhoneForInterakt(cart);
+  const normalizedPhone =
+    normalizeIndianPhoneForInterakt(cart);
 
-  const productImageUrl = getSafeImageUrl(cart);
 
-  console.log("INTERAKT SEND DEBUG:", {
-    DRY_RUN: process.env.DRY_RUN,
-    templateName,
-    originalPhone: cart.phoneE164 || cart.phoneNumber,
-    normalizedPhone,
-    customerName,
-    productName,
-    productImageUrl,
-  });
+  const customerName =
+    cart.customerName || "there";
+
+
+  const productName =
+    cart.productName || "your Omichef cookware";
+
+
+  const checkoutUrl =
+    getSafeCheckoutUrl(cart);
+
+
+
+  const imageUrl =
+    getAbandonedCartImageUrl(
+      cart,
+      templateName
+    );
+
+
 
   let payload;
 
-  /*
-    Static image-only templates:
-    Header: Image
-    Body variables: 0
-    Button: Static URL
 
-    Send only headerValues.
-  */
-  if (isStaticImageOnlyTemplate(templateName)) {
-    if (!productImageUrl) {
-      throw new Error(
-        "Image URL missing for static image template. Add productImageUrl, INTERAKT_CAMPAIGN_IMAGE_URL, or INTERAKT_FALLBACK_IMAGE_URL."
-      );
-    }
+
+  if(isImageTemplate(templateName)){
+
 
     payload = {
-      countryCode: normalizedPhone.countryCode,
-      phoneNumber: normalizedPhone.phoneNumber,
-      callbackData: `template_${cart._id || "manual"}`,
-      type: "Template",
-      template: {
-        name: templateName,
-        languageCode: process.env.INTERAKT_LANGUAGE || "en",
-        headerValues: [productImageUrl],
-      },
-    };
-  } else if (isImageTemplate(templateName)) {
-    const checkoutUrl = getSafeCheckoutUrl(cart);
 
-    if (!productImageUrl) {
-      throw new Error(
-        "Product image URL missing for image template. Add productImageUrl, INTERAKT_CAMPAIGN_IMAGE_URL, or INTERAKT_FALLBACK_IMAGE_URL."
-      );
-    }
+      countryCode:
+        normalizedPhone.countryCode,
 
-    payload = {
-      countryCode: normalizedPhone.countryCode,
-      phoneNumber: normalizedPhone.phoneNumber,
-      callbackData: `abandoned_cart_${cart._id}`,
-      type: "Template",
-      template: {
-        name: templateName,
-        languageCode: process.env.INTERAKT_LANGUAGE || "en",
-        headerValues: [productImageUrl],
-        bodyValues: [customerName, productName],
-        buttonValues: {
-          "0": [checkoutUrl],
-        },
-      },
+      phoneNumber:
+        normalizedPhone.phoneNumber,
+
+      callbackData:
+        `abandoned_cart_${cart._id}`,
+
+      type:"Template",
+
+
+      template:{
+
+        name:templateName,
+
+        languageCode:
+          process.env.INTERAKT_LANGUAGE || "en",
+
+
+        headerValues:[
+          imageUrl
+        ],
+
+
+        bodyValues:[
+          customerName,
+          productName
+        ],
+
+
+        buttonValues:{
+          "0":[checkoutUrl]
+        }
+
+      }
+
     };
+
+
   } else {
-    const checkoutUrl = getSafeCheckoutUrl(cart);
+
 
     payload = {
-      countryCode: normalizedPhone.countryCode,
-      phoneNumber: normalizedPhone.phoneNumber,
-      callbackData: `abandoned_cart_${cart._id}`,
-      type: "Template",
-      template: {
-        name: templateName,
-        languageCode: process.env.INTERAKT_LANGUAGE || "en",
-        bodyValues: [customerName, productName, checkoutUrl],
-      },
+
+      countryCode:
+        normalizedPhone.countryCode,
+
+      phoneNumber:
+        normalizedPhone.phoneNumber,
+
+      callbackData:
+        `abandoned_cart_${cart._id}`,
+
+      type:"Template",
+
+
+      template:{
+
+        name:templateName,
+
+        languageCode:
+          process.env.INTERAKT_LANGUAGE || "en",
+
+        bodyValues:[
+          customerName,
+          productName,
+          checkoutUrl
+        ]
+
+      }
+
     };
+
   }
 
-  console.log("INTERAKT API PAYLOAD:", JSON.stringify(payload, null, 2));
 
-  if (process.env.DRY_RUN === "true") {
-    return {
-      dryRun: true,
-      message: "Dry run only. Real WhatsApp was not sent.",
+  console.log(
+    "INTERAKT PAYLOAD",
+    JSON.stringify(payload,null,2)
+  );
+
+
+
+  const response =
+    await axios.post(
+      process.env.INTERAKT_API_URL,
       payload,
-    };
-  }
+      {
+        headers:{
+          Authorization:
+          `Basic ${process.env.INTERAKT_API_KEY}`,
 
-  const response = await axios.post(process.env.INTERAKT_API_URL, payload, {
-    headers: {
-      Authorization: `Basic ${process.env.INTERAKT_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    timeout: 20000,
-  });
+          "Content-Type":
+          "application/json",
+        },
 
-  console.log("INTERAKT API RESPONSE:", JSON.stringify(response.data, null, 2));
+        timeout:20000,
+      }
+    );
+
 
   return {
-    ok: true,
-    data: response.data,
+    ok:true,
+    data:response.data,
   };
+
 }
+
+
 
 async function sendInteraktCampaignTemplate(
   contact,
   templateName,
-  bodyValues = [],
-  options = {}
-) {
+  bodyValues=[],
+  options={}
+){
+
   ensureInteraktEnv();
 
-  if (!templateName) {
-    throw new Error("Campaign template name missing.");
-  }
 
-  const normalizedPhone = normalizeIndianPhoneForInterakt(contact);
-  const campaignImageUrl = getCampaignImageUrl(contact, options);
+  const normalizedPhone =
+    normalizeIndianPhoneForInterakt(contact);
 
-  const isStaticTemplate = isStaticImageOnlyTemplate(templateName);
 
-  const payload = {
-    countryCode: normalizedPhone.countryCode,
-    phoneNumber: normalizedPhone.phoneNumber,
-    callbackData: `campaign_${contact.campaignKey || "manual"}`,
-    type: "Template",
-    template: {
-      name: templateName,
-      languageCode: process.env.INTERAKT_LANGUAGE || "en",
-      headerValues: [campaignImageUrl],
-    },
-  };
 
-  /*
-    IMPORTANT:
-    For monsoon_abandoned_carts_tillnow_2026:
-    - Do not send bodyValues
-    - Do not send buttonValues
-    because your Interakt template has 0 body variables and a static button.
-  */
-  if (!isStaticTemplate && Array.isArray(bodyValues) && bodyValues.length > 0) {
-    payload.template.bodyValues = bodyValues;
-  }
+  const campaignImageUrl =
+    getCampaignImageUrl(
+      contact,
+      options
+    );
 
-  const shouldSendDynamicButton =
-    !isStaticTemplate &&
-    (options.sendDynamicButton === true || options.hasDynamicButton === true);
 
-  const buttonUrl =
-    options.buttonUrl ||
-    options.checkoutUrl ||
-    contact.checkoutUrl ||
-    contact.lastCheckoutUrl ||
-    null;
+  const payload={
 
-  if (shouldSendDynamicButton && buttonUrl) {
-    if (!isValidUrl(buttonUrl)) {
-      throw new Error(`Invalid campaign button/checkout URL: ${buttonUrl}`);
+    countryCode:
+      normalizedPhone.countryCode,
+
+    phoneNumber:
+      normalizedPhone.phoneNumber,
+
+
+    callbackData:
+      `campaign_${contact.campaignKey || "manual"}`,
+
+
+    type:"Template",
+
+
+    template:{
+
+      name:templateName,
+
+      languageCode:
+      process.env.INTERAKT_LANGUAGE || "en",
+
+
+      headerValues:[
+        campaignImageUrl
+      ]
+
     }
 
-    payload.template.buttonValues = {
-      "0": [buttonUrl],
-    };
+  };
+
+
+
+  if(
+    Array.isArray(bodyValues)
+    &&
+    bodyValues.length>0
+  ){
+
+    payload.template.bodyValues =
+      bodyValues;
+
   }
 
-  console.log("INTERAKT CAMPAIGN PHONE DEBUG:", {
-    originalPhone: contact.phoneE164 || contact.phoneNumber,
-    normalizedPhone,
-  });
 
-  console.log("INTERAKT CAMPAIGN TEMPLATE DEBUG:", {
-    templateName,
-    isStaticTemplate,
-    bodyValuesLength: Array.isArray(bodyValues) ? bodyValues.length : 0,
-    willSendBodyValues: Boolean(payload.template.bodyValues),
-    willSendButtonValues: Boolean(payload.template.buttonValues),
-  });
 
-  console.log("INTERAKT CAMPAIGN PAYLOAD:", JSON.stringify(payload, null, 2));
+  if(options.sendDynamicButton){
 
-  if (process.env.DRY_RUN === "true") {
-    return {
-      dryRun: true,
-      message: "Dry run only. Campaign WhatsApp was not sent.",
-      payload,
+    payload.template.buttonValues={
+      "0":[options.buttonUrl]
     };
+
   }
 
-  const response = await axios.post(process.env.INTERAKT_API_URL, payload, {
-    headers: {
-      Authorization: `Basic ${process.env.INTERAKT_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    timeout: 20000,
-  });
+
 
   console.log(
-    "INTERAKT CAMPAIGN RESPONSE:",
-    JSON.stringify(response.data, null, 2)
+    "INTERAKT CAMPAIGN PAYLOAD",
+    JSON.stringify(payload,null,2)
   );
 
+
+
+  const response =
+    await axios.post(
+      process.env.INTERAKT_API_URL,
+      payload,
+      {
+        headers:{
+          Authorization:
+          `Basic ${process.env.INTERAKT_API_KEY}`,
+
+          "Content-Type":
+          "application/json",
+        },
+
+        timeout:20000,
+      }
+    );
+
+
   return {
-    ok: true,
-    data: response.data,
+    ok:true,
+    data:response.data,
   };
+
 }
 
-module.exports = {
+
+
+module.exports={
   sendInteraktTemplate,
   sendInteraktCampaignTemplate,
 };
